@@ -1,7 +1,7 @@
-navigate = require './navigate'
+navigate = require './index'
 
 # for caching data across navigation events
-navigate.NavClass = class NavCache
+module.exports = class NavCache
   constructor: ->
     @cacheHash = []
     @cacheValue = {}
