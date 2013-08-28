@@ -1,6 +1,6 @@
-Url = require '../url'
-debug = global.debug 'ace:navigate'
-{include} = require '../mixin'
+Url = require 'url-fork'
+debug = require('debug-fork') 'ace:navigate'
+{include} = require 'lodash-fork'
 
 replaceInterval = 2000
 replaceLastCall = 0

@@ -1,5 +1,5 @@
 {
-    "name": "browser_navigate",
+    "name": "navigate-fork",
     "version": "0.0.0",
     "description": "ERROR: No README.md file found!",
     "main": "index.coffee",
@@ -12,5 +12,8 @@
     "dependencies": {
     },
     "DEBUG local dependencies": {
+      "lodash-fork": "0.x",
+      "debug-fork": "0.x",
+      "url-fork": "0.x"
     }
 }
