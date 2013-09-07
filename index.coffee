@@ -1,55 +1,54 @@
-Url = require 'url-fork'
-debug = require('debug-fork') 'ace:navigate'
+Uri = require 'uri-fork'
+require 'debug-fork'
+debug = global.debug 'ace:navigate'
 {include} = require 'lodash-fork'
 
 replaceInterval = 2000
 replaceLastCall = 0
 replaceTimeoutId = 0
 
-urls = []
+uris = []
 routeFn = null
 routeCtx = null
 ignoreCount = 0
 useHash = null
 iframe = null
 
-include Url,
+include Uri,
 
   hasHashPath: do ->
     regex = /^#\d+/
-    -> @hash and regex.test @hash
+    -> regex.test @hash
 
   index: do ->
     regex = /^#(\d+)/
-    ->
-      if (tmp = @hash and regex.exec(@hash)?[1])
-        +tmp
+    -> +tmp if tmp = @hash.match(regex)[1]
 
   hasPath: -> @path.length > 1
 
   hashPath: do ->
     regex = /^#\d+(\/[^#]*)/
-    -> @hash?.match(regex)?[1] || '/'
+    -> @hash.match(regex)?[1] || '/'
 
   hashHash: do ->
-    regex = /^#.*?#(.*)$/
-    -> @hash?.match(regex)?[1]
+    regex = /^#.*?(#.*)$/
+    -> @hash.match(regex)?[1] || ''
 
   stripHashPath: ->
-    @reform
-      hash: @hashHash() || ''
-      path: if @hasHashPath() then @hashPath() else @path
+    @setHash @hashHash()
+    @setPath @hashPath() if @hasHashPath()
+    this
 
-  hashHref: ->
-    "##{index}#{@path}#{@hash || ''}"
+  hashUri: ->
+    "##{index}#{@path}#{@hash}"
 
-module.exports = navigate = (url) ->
-  url = new Url url, navigate.url unless url instanceof Url
-  if url.href isnt navigate.url.href
-    if url.pathname is navigate.url.pathname
-      replaceThrottled url
+module.exports = navigate = (uri) ->
+  uri = new Uri uri, navigate.uri unless uri instanceof Uri
+  if uri.uri isnt navigate.uri.uri
+    if uri.pathname is navigate.uri.pathname
+      replaceThrottled uri
     else
-      push url
+      push uri
   return
 
 navigate.index = 0
@@ -68,26 +67,26 @@ doReplace = (now=new Date) ->
   debug "REPLACE"
 
   if useHash
-    hash = navigate.url.hashHref()
+    hash = navigate.uri.hashUri()
 
     ++ignoreCount
     window.location.replace hash
     iframe?.location.replace hash
 
   else
-    window.history.replaceState navigate.index, '', navigate.url.href
+    window.history.replaceState navigate.index, '', navigate.uri.uri
 
   return
 
-replace = (url) ->
+navigate.replaceNow = replace = (uri) ->
   clearTimeout replaceTimeoutId if replaceTimeoutId?
-  urls[navigate.index] = navigate.url = url
+  uris[navigate.index] = navigate.uri = uri
   doReplace()
   return
 
-navigator.replace = replaceThrottled = (url) ->
-  url = new Url url unless url instanceof Url
-  urls[navigate.index] = navigate.url = url
+navigate.replace = replaceThrottled = (uri) ->
+  uri = new Uri uri unless uri instanceof Uri
+  uris[navigate.index] = navigate.uri = uri
 
   now = new Date
   remaining = replaceInterval - (now - replaceLastCall)
@@ -100,28 +99,28 @@ navigator.replace = replaceThrottled = (url) ->
 
   return
 
-navigator.push = push = (url) ->
-  url = new Url url unless url instanceof Url
+navigate.push = push = (uri) ->
+  uri = new Uri uri unless uri instanceof Uri
 
   if replaceTimeoutId?
     clearTimeout replaceTimeoutId
     doReplace()
 
-  urls[++navigate.index] = navigate.url = url
+  uris[++navigate.index] = navigate.uri = uri
 
   debug "PUSH"
 
   if useHash
     ++ignoreCount
     iframe?.document.open().close()
-    window.location.hash = url.hashHref()
+    window.location.hash = uri.hashUri()
     iframe?.location.href = window.location.href
   else
-    window.history.pushState navigate.index, '', url.href
+    window.history.pushState navigate.index, '', uri.uri
 
   return
 
-urlchange = ->
+locationchange = ->
   if ignoreCount
     --ignoreCount
   else
@@ -129,54 +128,54 @@ urlchange = ->
       clearTimeout replaceTimeoutId
       replaceTimeoutId = null
 
-    newUrl = new Url(window.location.href)
+    newUri = new Uri window.location.href
 
-    if newUrl.hasHashPath()
-      newIndex = newUrl.index()
-      newUrl.stripHashPath()
+    if newUri.hasHashPath()
+      newIndex = newUri.index()
+      newUri.stripHashPath()
     else unless useHash
       newIndex = window.history.state
 
-    if !newIndex? or (newIndex is navigate.index and newUrl.href isnt navigate.url.href)
-      newIndex = urls.length
-      urls[newIndex] = newUrl
-      replaceWith = newUrl if useHash
+    if !newIndex? or (newIndex is navigate.index and newUri.uri isnt navigate.uri.uri)
+      newIndex = uris.length
+      uris[newIndex] = newUri
+      replaceWith = newUri if useHash
 
     if newIndex isnt navigate.index
       navigate.index = newIndex
 
-      debug "Got url change from #{navigate.url} to #{newUrl}"
+      debug "Got location change from #{navigate.uri} to #{newUri}"
 
-      storedUrl = urls[newIndex]
+      storedUri = uris[newIndex]
 
-      if (replaceWith ||= if storedUrl and storedUrl.href isnt newUrl.href then storedUrl else null)
+      if (replaceWith ||= if storedUri and storedUri.uri isnt newUri.uri then storedUri else null)
         replace replaceWith
       else
-        navigate.url = urls[newIndex] = newUrl
+        navigate.uri = uris[newIndex] = newUri
 
-      routeFn.call routeCtx, navigate.url.href, navigate.index
+      routeFn.call routeCtx, navigate.uri, navigate.index
 
-      debug "Done with urlchange"
+      debug "Done with locationchange"
   return
 
 module.exports.enable = ->
-  unless navigate.url
+  unless navigate.uri
 
     if /msie [\w.]+/.exec(window.navigator.userAgent.toLowerCase()) and (document.documentMode || 0) <= 7
       iframe = $('<iframe src="javascript:0" tabindex="-1" />').hide().appendTo('body')[0].contentWindow
       iframe.location.href = window.location.href
 
-    navigate.url = new Url(window.location.href)
+    navigate.uri = new Uri window.location.href
 
     if useHash = !window.history || !window.history.pushState
-      navigate.index = navigate.url.index()
+      navigate.index = navigate.uri.index()
     else
       navigate.index = window.history.state
 
     navigate.index ||= 0
-    urls[navigate.index] = navigate.url
+    uris[navigate.index] = navigate.uri
 
-    navigate.url.stripHashPath() if navigate.url.hasHashPath()
+    navigate.uri.stripHashPath() if navigate.uri.hasHashPath()
     doReplace() unless useHash
 
     ignoreCount = 0
@@ -185,20 +184,20 @@ module.exports.enable = ->
       setInterval (->
         if iframe.location.href isnt window.location.href
           window.location.href = iframe.location.href
-          urlchange()
+          locationchange()
       ), 300
 
     else if useHash
-      listen 'hashchange', urlchange
+      listen 'hashchange', locationchange
     else
       ignoreCount = 1
-      listen 'popstate', urlchange
+      listen 'popstate', locationchange
 
   return
 
 
 module.exports.listen = (route, ctx) ->
-  module.exports.enable() unless navigate.url
+  module.exports.enable() unless navigate.uri
 
   unless routeFn
     routeFn = route
@@ -210,9 +209,9 @@ module.exports.listen = (route, ctx) ->
 
     routeCtx = null
 
-    routeFn = (url, index) ->
-      currentRoute.call currentRouteCtx, url, index
-      route.call ctx, url, index
+    routeFn = (uri, index) ->
+      currentRoute.call currentRouteCtx, uri, index
+      route.call ctx, uri, index
       return
 
   navigate
