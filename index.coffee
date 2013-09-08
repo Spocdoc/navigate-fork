@@ -10,9 +10,9 @@ replaceTimeoutId = 0
 uris = []
 routeFn = null
 routeCtx = null
-ignoreCount = 0
 useHash = null
 iframe = null
+currentUri = null
 
 include Uri,
 
@@ -22,7 +22,7 @@ include Uri,
 
   index: do ->
     regex = /^#(\d+)/
-    -> +tmp if tmp = @hash.match(regex)[1]
+    -> +tmp if tmp = @hash.match(regex)?[1]
 
   hasPath: -> @path.length > 1
 
@@ -35,11 +35,11 @@ include Uri,
     -> @hash.match(regex)?[1] || ''
 
   stripHashPath: ->
-    @setHash @hashHash()
     @setPath @hashPath() if @hasHashPath()
+    @setHash @hashHash()
     this
 
-  hashUri: ->
+  hashUri: (index) ->
     "##{index}#{@path}#{@hash}"
 
 module.exports = navigate = (uri) ->
@@ -65,11 +65,10 @@ doReplace = (now=new Date) ->
   replaceTimeoutId = null
 
   debug "REPLACE"
+  currentUri = navigator.uri
 
   if useHash
-    hash = navigate.uri.hashUri()
-
-    ++ignoreCount
+    hash = navigate.uri.hashUri(navigate.index)
     window.location.replace hash
     iframe?.location.replace hash
 
@@ -106,14 +105,13 @@ navigate.push = push = (uri) ->
     clearTimeout replaceTimeoutId
     doReplace()
 
-  uris[++navigate.index] = navigate.uri = uri
+  currentUri = uris[++navigate.index] = navigate.uri = uri
 
   debug "PUSH"
 
   if useHash
-    ++ignoreCount
     iframe?.document.open().close()
-    window.location.hash = uri.hashUri()
+    window.location.hash = uri.hashUri(navigate.index)
     iframe?.location.href = window.location.href
   else
     window.history.pushState navigate.index, '', uri.uri
@@ -121,41 +119,38 @@ navigate.push = push = (uri) ->
   return
 
 locationchange = ->
-  if ignoreCount
-    --ignoreCount
-  else
+  newUri = new Uri window.location.href
+
+  if newUri.hasHashPath()
+    newIndex = newUri.index()
+    newUri.stripHashPath()
+  else unless useHash
+    newIndex = window.history.state
+
+  if !newIndex? or (newIndex is navigate.index and currentUri and newUri.uri isnt currentUri.uri)
+    newIndex = uris.length
+    uris[newIndex] = newUri
+    replaceWith = newUri if useHash
+
+  if newIndex isnt navigate.index
     if replaceTimeoutId?
       clearTimeout replaceTimeoutId
       replaceTimeoutId = null
 
-    newUri = new Uri window.location.href
+    navigate.index = newIndex
 
-    if newUri.hasHashPath()
-      newIndex = newUri.index()
-      newUri.stripHashPath()
-    else unless useHash
-      newIndex = window.history.state
+    debug "Got location change from #{navigate.uri} to #{newUri}"
 
-    if !newIndex? or (newIndex is navigate.index and newUri.uri isnt navigate.uri.uri)
-      newIndex = uris.length
-      uris[newIndex] = newUri
-      replaceWith = newUri if useHash
+    storedUri = uris[newIndex]
 
-    if newIndex isnt navigate.index
-      navigate.index = newIndex
+    if (replaceWith ||= if storedUri and storedUri.uri isnt newUri.uri then storedUri else null)
+      replace replaceWith
+    else
+      navigate.uri = uris[newIndex] = newUri
 
-      debug "Got location change from #{navigate.uri} to #{newUri}"
+    routeFn.call routeCtx, navigate.uri, navigate.index
 
-      storedUri = uris[newIndex]
-
-      if (replaceWith ||= if storedUri and storedUri.uri isnt newUri.uri then storedUri else null)
-        replace replaceWith
-      else
-        navigate.uri = uris[newIndex] = newUri
-
-      routeFn.call routeCtx, navigate.uri, navigate.index
-
-      debug "Done with locationchange"
+    debug "Done with locationchange"
   return
 
 module.exports.enable = ->
@@ -165,7 +160,7 @@ module.exports.enable = ->
       iframe = $('<iframe src="javascript:0" tabindex="-1" />').hide().appendTo('body')[0].contentWindow
       iframe.location.href = window.location.href
 
-    navigate.uri = new Uri window.location.href
+    currentUri = navigate.uri = new Uri window.location.href
 
     if useHash = !window.history || !window.history.pushState
       navigate.index = navigate.uri.index()
@@ -178,8 +173,6 @@ module.exports.enable = ->
     navigate.uri.stripHashPath() if navigate.uri.hasHashPath()
     doReplace() unless useHash
 
-    ignoreCount = 0
-
     if iframe
       setInterval (->
         if iframe.location.href isnt window.location.href
@@ -190,7 +183,6 @@ module.exports.enable = ->
     else if useHash
       listen 'hashchange', locationchange
     else
-      ignoreCount = 1
       listen 'popstate', locationchange
 
   return
