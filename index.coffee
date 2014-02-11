@@ -3,9 +3,10 @@ require 'debug-fork'
 debug = global.debug 'ace:navigate'
 {include} = require 'lodash-fork'
 
-replaceInterval = 2000
+replaceInterval = 500
 replaceLastCall = 0
 replaceTimeoutId = 0
+replaceIsDeferred = 1
 
 uris = []
 routeFn = null
@@ -46,7 +47,7 @@ module.exports = navigate = (uri) ->
   uri = new Uri uri, navigate.uri unless uri instanceof Uri
   if uri.uri isnt navigate.uri.uri
     if uri.pathname is navigate.uri.pathname
-      replaceThrottled uri
+      navigate.replace uri
     else
       push uri
   return
@@ -63,9 +64,9 @@ listen = (event, fn) ->
 doReplace = (now=new Date) ->
   replaceLastCall = now
   replaceTimeoutId = null
+  replaceIsDeferred = 0
 
-  debug "REPLACE"
-  currentUri = navigator.uri
+  debug "REPLACE #{navigate.uri}"
 
   if useHash
     hash = navigate.uri.hashUri(navigate.index)
@@ -83,7 +84,20 @@ navigate.replaceNow = replace = (uri) ->
   doReplace()
   return
 
-navigate.replace = replaceThrottled = (uri) ->
+replaceDeferred = (uri) ->
+  uri = new Uri uri unless uri instanceof Uri
+  uris[navigate.index] = navigate.uri = uri
+  replaceIsDeferred = true
+  return
+
+navigate.replace = (uri) ->
+  if uri.path is navigate.uri.path
+    replaceDeferred uri
+  else
+    replaceThrottled uri
+  return
+  
+replaceThrottled = (uri) ->
   uri = new Uri uri unless uri instanceof Uri
   uris[navigate.index] = navigate.uri = uri
 
@@ -104,10 +118,12 @@ navigate.push = push = (uri) ->
   if replaceTimeoutId?
     clearTimeout replaceTimeoutId
     doReplace()
+  else if replaceIsDeferred
+    doReplace()
 
   currentUri = uris[++navigate.index] = navigate.uri = uri
 
-  debug "PUSH"
+  debug "PUSH #{uri.uri}"
 
   if useHash
     iframe?.document.open().close()
