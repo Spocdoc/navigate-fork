@@ -52,6 +52,12 @@ module.exports = navigate = (uri) ->
       push uri
   return
 
+navigate.wouldPush = (uri) ->
+  uri = new Uri uri, navigate.uri unless uri instanceof Uri
+  if uri.uri isnt navigate.uri.uri
+    return true if uri.pathname isnt navigate.uri.pathname
+  false
+
 navigate.index = 0
 
 listen = (event, fn) ->
